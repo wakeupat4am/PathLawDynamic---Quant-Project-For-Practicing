@@ -1,0 +1,16 @@
+level,comparison,l2_distance_between_expected_signatures,interpretation
+1,A_vs_B,0.8078861833160571,Mean difference already appears at level 1 (first-order / drift info).
+1,A_vs_C,0.05405726759470057,"Almost zero: with equal means, level 1 barely separates the two variances."
+1,B_vs_C,0.8619434509107576,Level 1 mainly reflects the mean gap between B and C.
+2,A_vs_B,0.8080040730590234,Mean is a level-1 effect and is already captured by level 1.
+2,A_vs_C,31.247002509192885,"Big jump: variance is a level-2 (second-order) effect, so it switches on here."
+2,B_vs_C,31.245044980830002,Level 2 adds the variance gap on top of the mean gap.
+3,A_vs_B,7.29142216022248,Mean is a level-1 effect and is already captured by level 1.
+3,A_vs_C,31.36468571500068,"Variance is already captured at level 2. Raw distance still grows only because higher-order signature terms are numerically larger (a scale effect, see README)."
+3,B_vs_C,32.79442068859492,"Both differences are already captured by level 2; higher levels mostly add numerical scale, not new information (see README)."
+4,A_vs_B,9.164187608265184,Mean is a level-1 effect and is already captured by level 1.
+4,A_vs_C,860.2850429856586,"Variance is already captured at level 2. Raw distance still grows only because higher-order signature terms are numerically larger (a scale effect, see README)."
+4,B_vs_C,854.7910650819672,"Both differences are already captured by level 2; higher levels mostly add numerical scale, not new information (see README)."
+5,A_vs_B,34.66268938612799,Mean is a level-1 effect and is already captured by level 1.
+5,A_vs_C,917.7691572137664,"Variance is already captured at level 2. Raw distance still grows only because higher-order signature terms are numerically larger (a scale effect, see README)."
+5,B_vs_C,901.4545243356874,"Both differences are already captured by level 2; higher levels mostly add numerical scale, not new information (see README)."

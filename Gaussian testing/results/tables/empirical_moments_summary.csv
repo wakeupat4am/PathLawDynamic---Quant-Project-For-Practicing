@@ -1,0 +1,4 @@
+process,true_mean,true_volatility,true_variance,empirical_mean_of_increments,empirical_variance_of_increments
+A,0.0,1.0,1.0,0.0050509350299779215,1.0094325976305298
+B,0.05,1.0,1.0,0.04495592871479511,1.0072791413896045
+C,0.0,2.0,4.0,0.0077686554335501395,4.021469961282537

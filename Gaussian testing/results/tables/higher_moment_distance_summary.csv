@@ -1,0 +1,16 @@
+level,comparison,l2_distance_between_expected_signatures,interpretation
+1,G_vs_S,0.010897591265446722,"Near zero: mean and variance are matched, so levels 1-2 cannot separate them."
+1,G_vs_T,0.03250685777283985,Near zero: matched mean and variance keep levels 1-2 indistinguishable.
+1,S_vs_T,0.02160926650739313,Near zero: both share the same mean and variance.
+2,G_vs_S,0.11890765921344358,"Near zero: mean and variance are matched, so levels 1-2 cannot separate them."
+2,G_vs_T,0.03327791435407806,Near zero: matched mean and variance keep levels 1-2 indistinguishable.
+2,S_vs_T,0.12737568731452695,Near zero: both share the same mean and variance.
+3,G_vs_S,1.780587913030365,Jump expected here: skewness is a third-moment (level-3) effect.
+3,G_vs_T,0.7492255564761585,"Still small: Student-t is symmetric, so it has (almost) no third moment."
+3,S_vs_T,1.0359873050884711,Skewness of S starts to separate them at level 3.
+4,G_vs_S,6.089018805849174,Skewness already captured at level 3; higher levels add mostly numerical scale.
+4,G_vs_T,6.006214382965966,Jump expected here: heavy tails / kurtosis is a fourth-moment (level-4) effect.
+4,S_vs_T,1.0449339274357186,Kurtosis of T adds further separation at level 4.
+5,G_vs_S,21.833477108961617,Skewness already captured at level 3; higher levels add mostly numerical scale.
+5,G_vs_T,9.91386283116754,Kurtosis already captured at level 4; higher levels add mostly numerical scale.
+5,S_vs_T,13.121563179762791,Combined higher-moment difference already captured by level 4.
