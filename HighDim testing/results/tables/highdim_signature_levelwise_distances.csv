@@ -1,0 +1,33 @@
+config_name,comparison,level,number_of_level_coordinates,raw_level_l2_distance,normalized_level_distance,interpretation,standardized_level_distance
+d20_depth3,A_vs_B,1,20,33.2353717995683,7.431655060131423,Mean shift shows up strongly here: drift is a level-1 property.,0.4332308586911866
+d20_depth3,A_vs_B,2,400,566.2979911851916,28.31489955925958,Little new info: the mean difference is already captured at level 1.,0.1351760927461823
+d20_depth3,A_vs_B,3,8000,19295.09412869468,215.7257105200919,Little new info: the mean difference is already captured at level 1.,0.08435516811102875
+d20_depth3,A_vs_C,1,20,1.0109305139162441,0.2260509349645519,"Small: both processes have zero mean, so level 1 barely differs.",0.013093381835657537
+d20_depth3,A_vs_C,2,400,395.6290600898764,19.78145300449382,"Cross-channel terms S^{i,j} switch on: covariance geometry appears here.",0.09420758878262074
+d20_depth3,A_vs_C,3,8000,2747.700500430489,30.720225503863812,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.01431676359161497
+d20_depth3,B_vs_C,1,20,33.20306463639941,7.4244309588308415,Reflects B's mean shift (C has none).,0.4328100446784901
+d20_depth3,B_vs_C,2,400,373.1721077746467,18.658605388732333,Adds C's correlation-block geometry on top.,0.08896887147720003
+d20_depth3,B_vs_C,3,8000,19293.589231414448,215.70888525700312,Combined higher-order differences; compare via the normalised value.,0.08434592748888271
+d20_depth3,A_vs_D,1,20,1.113939906554936,0.24908453539066003,"Small: both processes have zero mean, so level 1 barely differs.",0.014425530494564909
+d20_depth3,A_vs_D,2,400,269.0015869356759,13.450079346783795,"Cross-channel terms S^{i,j} switch on: covariance geometry appears here.",0.06398893721348015
+d20_depth3,A_vs_D,3,8000,2911.887534693425,32.55589235204388,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.015150406325404077
+d10_depth5,A_vs_B,1,10,21.283813095574747,6.730532667533522,Mean shift shows up strongly here: drift is a level-1 property.,0.38790984497721565
+d10_depth5,A_vs_B,2,100,230.32096232525063,23.032096232525063,Little new info: the mean difference is already captured at level 1.,0.10865293956903384
+d10_depth5,A_vs_B,3,1000,8368.146949688378,264.62404156005726,Little new info: the mean difference is already captured at level 1.,0.09812757488630917
+d10_depth5,A_vs_B,4,10000,78985.34192174616,789.8534192174616,Little new info: the mean difference is already captured at level 1.,0.03298901085378354
+d10_depth5,A_vs_B,5,100000,1889001.2308401738,5973.5463923164525,Little new info: the mean difference is already captured at level 1.,0.028394518959654544
+d10_depth5,A_vs_C,1,10,1.0032827825561226,0.3172658730108796,"Small: both processes have zero mean, so level 1 barely differs.",0.0183565512503206
+d10_depth5,A_vs_C,2,100,385.67189268240594,38.5671892682406,"Cross-channel terms S^{i,j} switch on: covariance geometry appears here.",0.18339325932606362
+d10_depth5,A_vs_C,3,1000,1082.7497637719669,34.23955389528681,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.015466875367475352
+d10_depth5,A_vs_C,4,10000,154783.41280433864,1547.8341280433865,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.07350197040658679
+d10_depth5,A_vs_C,5,100000,752229.2290113209,2378.7576862281835,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.01551862389356595
+d10_depth5,B_vs_C,1,10,21.474385732938984,6.790797026911151,Reflects B's mean shift (C has none).,0.391346277639084
+d10_depth5,B_vs_C,2,100,407.4023884946781,40.740238849467815,Adds C's correlation-block geometry on top.,0.1934805104775502
+d10_depth5,B_vs_C,3,1000,8463.664600152555,267.64457488220364,Combined higher-order differences; compare via the normalised value.,0.09927527362176539
+d10_depth5,B_vs_C,4,10000,160375.00134367897,1603.7500134367897,Combined higher-order differences; compare via the normalised value.,0.07471367700230548
+d10_depth5,B_vs_C,5,100000,1940545.5557181486,6136.543859386534,Combined higher-order differences; compare via the normalised value.,0.029461294647176624
+d10_depth5,A_vs_D,1,10,0.8603443861043313,0.2720647832229005,"Small: both processes have zero mean, so level 1 barely differs.",0.015788627966734223
+d10_depth5,A_vs_D,2,100,142.0096586715092,14.200965867150918,"Cross-channel terms S^{i,j} switch on: covariance geometry appears here.",0.06750855318969196
+d10_depth5,A_vs_D,3,1000,1070.128872969318,33.840446284920404,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.015344733680078958
+d10_depth5,A_vs_D,4,10000,60744.13438426532,607.4413438426532,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.027896293969306575
+d10_depth5,A_vs_D,5,100000,779692.7488857582,2465.604961596707,"Higher-order cross terms; watch the normalised value, not the raw scale.",0.016099385940436424

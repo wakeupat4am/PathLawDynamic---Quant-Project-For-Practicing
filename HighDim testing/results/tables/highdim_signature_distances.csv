@@ -1,0 +1,9 @@
+config_name,comparison,depth,raw_signature_l2_distance,level_normalized_signature_distance,interpretation
+d20_depth3,A_vs_B,3,19303.431183081077,210.36741285080822,Mean shift -> expect a strong level-1 contribution.
+d20_depth3,A_vs_C,3,2776.036998174567,30.25305272131913,Correlation blocks -> expect the signal at level 2+ (cross terms).
+d20_depth3,B_vs_C,3,19297.226362772286,210.29979316272352,Mixed: mean shift (level 1) plus correlation geometry (level 2+).
+d20_depth3,A_vs_D,3,2924.2865983584747,31.86866626437617,Common market factor -> expect co-movement at level 2+ (cross terms).
+d10_depth5,A_vs_B,5,1890670.3609403477,5672.039443089159,Mean shift -> expect a strong level-1 contribution.
+d10_depth5,A_vs_C,5,767989.6086205795,2303.980345792267,Correlation blocks -> expect the signal at level 2+ (cross terms).
+d10_depth5,B_vs_C,5,1947179.754139243,5841.568470333101,Mixed: mean shift (level 1) plus correlation geometry (level 2+).
+d10_depth5,A_vs_D,5,782056.1347310126,2346.180135123041,Common market factor -> expect co-movement at level 2+ (cross terms).

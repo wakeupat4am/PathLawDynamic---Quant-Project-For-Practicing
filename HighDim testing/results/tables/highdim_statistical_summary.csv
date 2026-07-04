@@ -1,0 +1,9 @@
+config_name,process,terminal_mean_norm,avg_terminal_variance,avg_increment_variance,notes
+d20_depth3,A,0.6707268718134434,298.62065219805584,0.999760977313309,"Baseline: d independent assets, no drift, unit volatility."
+d20_depth3,B,33.52651644672903,301.63912996181034,0.9999834215805949,"Mean-shift: first 5 of 20 assets drift +0.05, same identity covariance as A."
+d20_depth3,C,0.7363540524084218,300.7709302485165,1.0001627337520742,"Correlation blocks: sector/block co-movement between some assets, zero drift. Blocks: ch0-4 rho=0.5; ch5-9 rho=0.3."
+d20_depth3,D,0.9678910093784021,327.27243658351375,1.0897423461591216,Common shock: a shared market factor (vol 0.3) plus unit idiosyncratic noise drives all assets to co-move.
+d10_depth5,A,0.6131918686312721,298.7218598817116,0.9998929346817518,"Baseline: d independent assets, no drift, unit volatility."
+d10_depth5,B,21.25855474884118,299.1479573140524,1.0003542188202836,"Mean-shift: first 2 of 10 assets drift +0.05, same identity covariance as A."
+d10_depth5,C,0.6466801541583008,298.89767861243274,1.0004567816155425,"Correlation blocks: sector/block co-movement between some assets, zero drift. Blocks: ch0-4 rho=0.5; ch5-9 rho=0.3."
+d10_depth5,D,0.47430532542347703,326.3317906850996,1.0896909554906498,Common shock: a shared market factor (vol 0.3) plus unit idiosyncratic noise drives all assets to co-move.

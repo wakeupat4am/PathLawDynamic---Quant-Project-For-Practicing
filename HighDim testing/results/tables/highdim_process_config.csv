@@ -1,0 +1,9 @@
+config_name,process,dimension,signature_depth,time_steps,num_paths,batch_size,covariance_structure,mean_structure
+d20_depth3,A,20,3,300,10000,250,"identity (independent, unit variance)",zero mean (all channels 0)
+d20_depth3,B,20,3,300,10000,250,"identity (independent, unit variance)","first 5 channels = 0.05, rest = 0"
+d20_depth3,C,20,3,300,10000,250,identity + correlated blocks (ch0-4 rho=0.5; ch5-9 rho=0.3),zero mean (all channels 0)
+d20_depth3,D,20,3,300,10000,250,market factor + idiosyncratic (all channels co-move),zero mean (all channels 0)
+d10_depth5,A,10,5,300,10000,100,"identity (independent, unit variance)",zero mean (all channels 0)
+d10_depth5,B,10,5,300,10000,100,"identity (independent, unit variance)","first 2 channels = 0.05, rest = 0"
+d10_depth5,C,10,5,300,10000,100,identity + correlated blocks (ch0-4 rho=0.5; ch5-9 rho=0.3),zero mean (all channels 0)
+d10_depth5,D,10,5,300,10000,100,market factor + idiosyncratic (all channels co-move),zero mean (all channels 0)
