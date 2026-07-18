@@ -7,12 +7,16 @@ High-dimensional Gaussian signature benchmark -- the next stage after the 1D
 
 What this script does
 ---------------------
-It runs TWO configurations back to back:
+It runs one or more named preset configurations. The default presets are:
 
-    Config 1:  d = 20, signature depth = 3   (higher-dimensional geometry,
-                                               cross-channel interactions)
-    Config 2:  d = 10, signature depth = 5   (deeper signature levels while the
-                                               feature dimension stays manageable)
+    d20_depth3   : d = 20, depth = 3
+    d10_depth5   : d = 10, depth = 5
+
+The larger server-oriented presets are:
+
+    d20_depth5   : d = 20, depth = 5
+    d10_depth6   : d = 10, depth = 6
+    d30_depth5   : d = 30, depth = 5
 
 For each configuration it simulates several multivariate Gaussian processes
 (A baseline, B mean-shift, C correlation-block, and optionally D common-shock),
@@ -71,7 +75,8 @@ from utils import (  # noqa: E402
 )
 
 
-# The two configurations from the experiment design.
+# Preset configurations. The first two are the original checked-in experiment
+# settings; the larger ones are intended for high-RAM server runs.
 CONFIGS = [
     {
         "config_name": "d20_depth3",
@@ -84,6 +89,24 @@ CONFIGS = [
         "dimension": 10,
         "depth": 5,
         "default_batch_size": 100,
+    },
+    {
+        "config_name": "d20_depth5",
+        "dimension": 20,
+        "depth": 5,
+        "default_batch_size": 16,
+    },
+    {
+        "config_name": "d10_depth6",
+        "dimension": 10,
+        "depth": 6,
+        "default_batch_size": 64,
+    },
+    {
+        "config_name": "d30_depth5",
+        "dimension": 30,
+        "depth": 5,
+        "default_batch_size": 4,
     },
 ]
 

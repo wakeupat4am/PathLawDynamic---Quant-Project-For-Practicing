@@ -15,13 +15,17 @@ python "HighDim testing/run_highdim_gaussian_benchmark.py"
 python "HighDim testing/run_highdim_gaussian_benchmark.py" --num-paths 100000
 # or run a single configuration:
 python "HighDim testing/run_highdim_gaussian_benchmark.py" --config d20_depth3
-# or let a larger server use more RAM / CPU:
+# or use one of the larger server presets:
 python "HighDim testing/run_highdim_gaussian_benchmark.py" \
-  --config d10_depth5 \
+  --config d20_depth5 \
   --num-paths 200000 \
-  --batch-size 4000 \
+  --batch-size 256 \
   --max-batch-signature-gb 32 \
   --n-jobs 48
+
+# other server presets:
+python "HighDim testing/run_highdim_gaussian_benchmark.py" --config d10_depth6
+python "HighDim testing/run_highdim_gaussian_benchmark.py" --config d30_depth5
 ```
 
 ---
