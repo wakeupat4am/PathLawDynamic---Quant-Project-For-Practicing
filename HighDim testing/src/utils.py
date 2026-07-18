@@ -162,6 +162,8 @@ def log_config_banner(
     time_steps: int,
     batch_size: int,
     time_aug: bool,
+    max_batch_signature_bytes: int,
+    n_jobs: int,
 ) -> None:
     """Print the required start-of-configuration banner.
 
@@ -186,6 +188,11 @@ def log_config_banner(
     print(f"  num_paths                     : {num_paths:,}")
     print(f"  time_steps                    : {time_steps}")
     print(f"  batch_size                    : {batch_size}")
+    print(f"  pysiglib n_jobs               : {n_jobs}")
+    print(
+        f"  max signature batch budget    : "
+        f"{format_bytes(max_batch_signature_bytes)}"
+    )
     print(f"  est. raw path memory / batch  : {format_bytes(path_bytes)}")
     print(f"  est. signature memory / batch : {format_bytes(sig_bytes)}")
     print("-" * 70)

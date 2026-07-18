@@ -15,6 +15,13 @@ python "HighDim testing/run_highdim_gaussian_benchmark.py"
 python "HighDim testing/run_highdim_gaussian_benchmark.py" --num-paths 100000
 # or run a single configuration:
 python "HighDim testing/run_highdim_gaussian_benchmark.py" --config d20_depth3
+# or let a larger server use more RAM / CPU:
+python "HighDim testing/run_highdim_gaussian_benchmark.py" \
+  --config d10_depth5 \
+  --num-paths 200000 \
+  --batch-size 4000 \
+  --max-batch-signature-gb 32 \
+  --n-jobs 48
 ```
 
 ---
@@ -143,6 +150,10 @@ batch of signatures would exceed a 1 GB budget (it never does at these settings)
 > extra paths only *sharpen* the results (e.g. the A_vs_C level-1 noise floor
 > drops from 0.013 at 10k paths to 0.004 at 100k, making the level-2 covariance
 > signal stand out even more clearly).
+>
+> The script now also exposes `--max-batch-signature-gb` and `--n-jobs`, so the
+> same streaming logic can use much larger RAM and CPU budgets on a remote Linux
+> server without changing the core experiment code.
 
 ## 8. What Processes A, B, C (and D) represent
 

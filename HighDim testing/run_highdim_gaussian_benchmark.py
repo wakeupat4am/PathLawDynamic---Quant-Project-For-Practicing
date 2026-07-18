@@ -30,7 +30,8 @@ Run it from the project root (mind the space in the folder name):
     python "HighDim testing/run_highdim_gaussian_benchmark.py"
 
 Optional flags let you scale up (``--num-paths 100000``), pick a single config,
-change batch sizes, or turn on time augmentation.
+change batch sizes, raise the per-batch signature memory budget, control
+``pysiglib`` CPU threads, or turn on time augmentation.
 """
 
 from __future__ import annotations
@@ -95,8 +96,9 @@ BASE_COMPARISONS = [
 ]
 
 # Safety budget: the largest a SINGLE batch of signatures is allowed to be before
-# we automatically shrink the batch size. 1 GB is comfortably safe on a laptop.
-MAX_BATCH_SIGNATURE_BYTES = 1_000_000_000
+# we automatically shrink the batch size. The default is laptop-safe, but the CLI
+# exposes a larger server setting when more RAM is available.
+DEFAULT_MAX_BATCH_SIGNATURE_GB = 1.0
 
 
 def run_configuration(
@@ -108,6 +110,8 @@ def run_configuration(
     time_aug: bool,
     include_common_shock: bool,
     batch_size_override: int | None,
+    max_batch_signature_bytes: int,
+    n_jobs: int,
 ) -> dict:
     """Run one configuration end to end and return all its tables + sample paths."""
     config_name = config["config_name"]
@@ -118,18 +122,26 @@ def run_configuration(
     # -- Decide a safe batch size ------------------------------------------
     requested = batch_size_override or config["default_batch_size"]
     batch_size, was_reduced = choose_safe_batch_size(
-        requested, effective_dim, depth, MAX_BATCH_SIGNATURE_BYTES
+        requested, effective_dim, depth, max_batch_signature_bytes
     )
     if was_reduced:
         print(
             f"[warning] Requested batch_size={requested} would exceed the "
-            f"{format_bytes(MAX_BATCH_SIGNATURE_BYTES)} per-batch signature budget "
+            f"{format_bytes(max_batch_signature_bytes)} per-batch signature budget "
             f"for {config_name}; automatically reduced to {batch_size}."
         )
 
     # -- Start-of-config logging banner ------------------------------------
     log_config_banner(
-        config_name, dimension, depth, num_paths, time_steps, batch_size, time_aug
+        config_name,
+        dimension,
+        depth,
+        num_paths,
+        time_steps,
+        batch_size,
+        time_aug,
+        max_batch_signature_bytes,
+        n_jobs,
     )
     if time_aug:
         print(
@@ -171,7 +183,7 @@ def run_configuration(
             stat_stats[name].update(paths, increments)
 
             # 3. compute signatures for the batch and fold into the running mean
-            batch_sigs = compute_batch_signatures(paths, depth)
+            batch_sigs = compute_batch_signatures(paths, depth, n_jobs=n_jobs)
             sig_stats[name].update(batch_sigs)
 
             # keep a few example paths from the very first batch for the figure
@@ -263,6 +275,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Override the per-config default batch size.")
+    parser.add_argument(
+        "--max-batch-signature-gb",
+        type=float,
+        default=DEFAULT_MAX_BATCH_SIGNATURE_GB,
+        help="Largest signature batch to allow in memory before auto-shrinking "
+             "the batch size.",
+    )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=-1,
+        help="CPU threads passed to pysiglib (-1 means all available cores).",
+    )
     parser.add_argument("--time-aug", action="store_true",
                         help="Append a time channel (effective dimension becomes d+1).")
     parser.add_argument("--no-common-shock", action="store_true",
@@ -274,6 +299,7 @@ def main() -> None:
                              "default results/ (useful for scaling tests so the "
                              "canonical results are not overwritten).")
     args = parser.parse_args()
+    max_batch_signature_bytes = int(args.max_batch_signature_gb * (1024 ** 3))
 
     results_root = Path(args.results_dir) if args.results_dir else HERE / "results"
     tables_dir = results_root / "tables"
@@ -294,6 +320,8 @@ def main() -> None:
             time_aug=args.time_aug,
             include_common_shock=not args.no_common_shock,
             batch_size_override=args.batch_size,
+            max_batch_signature_bytes=max_batch_signature_bytes,
+            n_jobs=args.n_jobs,
         )
         all_results.append(result)
         # Per-config sample-path figure (first config's processes are enough, but
