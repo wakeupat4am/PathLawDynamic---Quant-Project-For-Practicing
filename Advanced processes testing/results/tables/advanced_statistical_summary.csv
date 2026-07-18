@@ -1,0 +1,7 @@
+process,terminal_mean_norm,terminal_variance,increment_variance,notes
+BS,0.02101356413082638,0.040081877428079456,0.0004006389521797664,"Black-Scholes GBM: constant volatility, i.i.d. Gaussian log-returns. The null model every other process is compared against."
+HEST,0.021149603922988165,0.04208107517810484,0.0004012426658448603,"Heston stochastic volatility: variance is a mean-reverting CIR process (kappa=2, vol-of-vol=0.3) correlated -0.7 with the price. Volatility clustering and mild skew, no jumps."
+MERT,0.0294300872447762,0.07181073254203874,0.0007271460049797976,"Merton jump-diffusion: constant-vol diffusion plus ~1 lognormal jump/year (mean -0.10, std 0.15). Adds negative skew and fat tails on top of Black-Scholes."
+BATES,0.03425890530675569,0.07355883462999535,0.0007270264353833173,Bates (combined): Heston stochastic volatility AND Merton jumps together -- stochastic-vol clustering plus jump skew/tails. The full jump-diffusion model.
+FBM,0.002008485679956015,0.038666530900559076,6.30900172813926e-05,"Fractional Brownian motion (Hurst=0.70): non-Markov log-price whose increments have long-range autocorrelation. Terminal variance is matched to BS, so only the path memory differs."
+RVOL,0.2972789111592741,0.06442422539585398,0.0004272779390450982,"Rough Bergomi: volatility driven by a rough (Hurst=0.10) fractional process (vol-of-vol eta=0.8) correlated -0.7 with the price. Very autocorrelated, jagged volatility -- the rough-vol model. Vol-of-vol is kept moderate so the ROUGHNESS, not raw scale, is what distinguishes it from Black-Scholes."

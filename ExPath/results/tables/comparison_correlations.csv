@@ -1,0 +1,4 @@
+metric,expath_trailing_score,path2_trailing_score,signature_trailing_score
+expath_trailing_score,1.0,0.9486292420560243,0.8854255425930954
+path2_trailing_score,0.9486292420560243,1.0,0.8879969835163319
+signature_trailing_score,0.8854255425930954,0.8879969835163319,1.0

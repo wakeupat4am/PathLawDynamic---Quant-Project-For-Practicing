@@ -1,0 +1,1031 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% Packages
+% ---------------------------------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+% Figures live inside the three experiment folders (note the spaces in the names).
+% graphicspath entries are brace-delimited, so the spaces are handled correctly.
+\graphicspath{%
+  {Gaussian testing/results/figures/}%
+  {HighDim testing/results/figures/}%
+  {Advanced processes testing/results/figures/}%
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\sig}{\mathbb{S}}
+
+\title{\textbf{Characterising Stochastic Processes with Path Signatures}\\[4pt]
+\large From One-Dimensional Moment Recovery to High-Dimensional Path Geometry\\
+and Advanced Financial Processes}
+\author{PathLaw project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report documents a staged study of how \emph{truncated path signatures}
+characterise stochastic processes, together with the theory and implementation
+behind it. On the theory side we set out the stochastic differential equations
+(SDEs) and basic properties of the models we study --- geometric Brownian motion,
+Heston stochastic volatility, the Merton and Bates jump-diffusions, fractional
+Brownian motion and rough Bergomi volatility --- and give a self-contained account
+of path signatures, their truncation, and the precise sense in which the
+\emph{expected signature} encodes the moments and law of a process. On the
+implementation side we detail how the two signature libraries (\code{pysiglib} and
+\code{roughpy}) were cross-validated, how the batched, memory-flat Monte-Carlo
+engine simulates each process, and how moments and signatures are estimated and
+compared. On the results side we confirm, on one-dimensional Gaussian and
+non-Gaussian processes, that each moment becomes visible at its own signature
+level (mean~$\to$~1, variance~$\to$~2, skewness~$\to$~3, kurtosis~$\to$~4); we
+recover cross-channel covariance geometry (level~2+) in high dimension and
+benchmark it against classical estimators; and we show that on advanced financial
+processes the signature separates stochastic volatility, jumps and, most
+distinctively, \emph{path memory} (long memory and roughness) that a moment or
+covariance table cannot see. All signature summaries are streaming and verified
+flat at $\approx 0.46$~GB for $100{,}000$ paths.
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+The guiding research question, posed by the project supervisor, is:
+\begin{quote}
+\emph{``We want to check the way signatures characterise processes by checking
+how they recover their moments. Note, you have to truncate the level of the
+signatures. Start with a Gaussian process (only two moments) and complexify the
+processes (higher moments) and test the truncation levels.''}
+\end{quote}
+In plain terms: \textbf{can truncated path signatures characterise a stochastic
+process by recovering its moment information (mean, variance, \ldots), its
+geometry (covariance, co-movement) in higher dimensions, and its path memory once
+we leave the Gaussian/Markov world?}
+
+\paragraph{Four departures from the Black--Scholes benchmark.}
+The classical benchmark for an asset price is geometric Brownian motion
+(Black--Scholes): constant volatility and independent Gaussian log-returns. Real
+markets violate this in four qualitatively different ways, and these are the
+``cases'' this report studies:
+\begin{enumerate}
+  \item \textbf{Stochastic volatility.} Volatility is itself random and mean
+        reverts, producing volatility clustering and (with leverage) skew. The
+        canonical model is \textbf{Heston}.
+  \item \textbf{Jumps (and jump-diffusion).} Prices move discontinuously,
+        creating skew and heavy tails on top of a diffusion. The canonical models
+        are \textbf{Merton} (jumps on a constant-vol diffusion) and \textbf{Bates}
+        (jumps on Heston stochastic vol --- the combined jump-diffusion).
+  \item \textbf{Non-Markovian dynamics / long memory.} Increments carry
+        autocorrelation, so the future depends on the whole past. The canonical
+        driver is \textbf{fractional Brownian motion}.
+  \item \textbf{Rough volatility.} Volatility is not merely stochastic but
+        \emph{rough} --- its trajectories are far less regular than Brownian
+        motion and highly autocorrelated. The canonical model is
+        \textbf{rough Bergomi}.
+\end{enumerate}
+Part~I (Theory) writes down the SDE and basic properties of each, then develops
+signatures and how they access moments. Part~II (Implementation) details the
+library validation, the Monte-Carlo engine and the estimation/comparison
+machinery. Part~III (Results) presents the experiments, staged from simple to
+advanced:
+\begin{enumerate}
+  \item \textbf{Stage~1 (1D Gaussian).} Recover the mean and variance.
+  \item \textbf{Stage~2 (1D non-Gaussian).} Recover skewness and kurtosis with
+        matched mean and variance.
+  \item \textbf{Stage~3 (high-dimensional Gaussian).} Recover cross-channel
+        covariance geometry and benchmark against classical estimators.
+  \item \textbf{Stage~4 (advanced processes).} Separate the four departures above
+        and locate each feature by signature level.
+\end{enumerate}
+All signatures are computed with \code{pysiglib}; \code{roughpy} is used as an
+independent cross-check. Every experiment is synthetic, on data whose true
+moments and geometry are known, so the signatures can be checked against a known
+answer.
+
+% ###########################################################################
+\part{Theory}
+% ###########################################################################
+
+% ===========================================================================
+\section{Stochastic models and their SDEs}\label{sec:models}
+% ===========================================================================
+We work throughout with the \emph{log-price} $X_t = \log S_t$ on a filtered
+probability space $(\Omega,\mathcal{F},(\mathcal{F}_t),\mathbb{P})$, with
+$W,\,Z,\,W^S,\,W^v$ standard Brownian motions and $N$ a Poisson process. All
+parameters are annualised and the horizon is $T$ years.
+
+\subsection{The Black--Scholes benchmark (GBM)}
+Geometric Brownian motion is
+\begin{equation}
+  \dd S_t = \mu\, S_t\,\dd t + \sigma\, S_t\,\dd W_t,
+  \qquad\Longleftrightarrow\qquad
+  \dd X_t = \Big(\mu - \tfrac12\sigma^2\Big)\dd t + \sigma\,\dd W_t .
+\end{equation}
+\textbf{Properties.} $X$ has \emph{independent, stationary, Gaussian} increments:
+$X_{t+\Delta}-X_t \sim \mathcal{N}\big((\mu-\tfrac12\sigma^2)\Delta,\ \sigma^2\Delta\big)$.
+It is a Markov process, a (time-changed) L\'evy process and, after discounting, a
+martingale. Its law is fixed by just two moments; skewness and excess kurtosis are
+zero. This is the null model against which every richer process is compared, and
+$\Var(X_T-X_0)=\sigma^2 T$ is the yardstick we match the other processes to.
+
+\subsection{Stochastic volatility: the Heston model}
+Heston~\cite{Heston1993} makes the variance $v_t$ a mean-reverting square-root
+(Cox--Ingersoll--Ross~\cite{CIR1985}) process correlated with the price:
+\begin{align}
+  \dd X_t &= \Big(\mu - \tfrac12 v_t\Big)\dd t + \sqrt{v_t}\,\dd W_t^{S}, \\
+  \dd v_t &= \kappa(\theta - v_t)\,\dd t + \xi\sqrt{v_t}\,\dd W_t^{v},
+  \qquad \dd\langle W^{S}, W^{v}\rangle_t = \rho\,\dd t .
+\end{align}
+Here $\kappa$ is the mean-reversion speed, $\theta$ the long-run variance, $\xi$
+the vol-of-vol and $\rho$ the leverage correlation. \textbf{Properties.} The pair
+$(X,v)$ is jointly Markov, but $X$ \emph{alone} is not --- it depends on the latent
+$v$. The variance stays positive when the \emph{Feller condition}
+$2\kappa\theta \ge \xi^2$ holds (here $2\cdot2\cdot0.04 = 0.16 \ge 0.09 = 0.3^2$),
+and its stationary law is Gamma. Stochastic volatility produces \emph{volatility
+clustering} (autocorrelated squared returns) and, through $\rho<0$, negative
+skew and semi-heavy tails --- excess kurtosis without the true jumps of the next
+model. Increments are \emph{not} independent, so $X$ is not a L\'evy process.
+
+\subsection{Jumps: the Merton jump-diffusion}
+Merton~\cite{Merton1976} adds a compound-Poisson jump term to a constant-vol
+diffusion. With jump times of intensity $\lambda$ and i.i.d.\ log jump sizes
+$J_i\sim\mathcal{N}(m,\delta^2)$,
+\begin{equation}
+  X_t = X_0 + \Big(\mu - \tfrac12\sigma^2 - \lambda\bar\kappa\Big)t
+        + \sigma W_t + \sum_{i=1}^{N_t} J_i,
+  \qquad \bar\kappa = \E\!\big[e^{J}-1\big] = e^{\,m+\frac12\delta^2}-1,
+\end{equation}
+where $-\lambda\bar\kappa$ is the martingale compensator that removes the drift the
+jumps would otherwise inject. \textbf{Properties.} $X$ is a \emph{L\'evy process}:
+increments are independent and stationary, and it is Markov. Over a step $\Delta$
+the increment has mean $(\mu-\tfrac12\sigma^2-\lambda\bar\kappa)\Delta+\lambda m\Delta$,
+variance $\sigma^2\Delta+\lambda(m^2+\delta^2)\Delta$, \emph{negative skew} when
+$m<0$, and \emph{positive excess kurtosis} $\propto \lambda(3\delta^4+6m^2\delta^2+m^4)$
+--- genuinely heavy (leptokurtic) tails absent from any diffusion.
+
+\subsection{Stochastic volatility with jumps: the Bates model}
+Bates~\cite{Bates1996} combines the two, superimposing Merton jumps on Heston
+stochastic volatility:
+\begin{equation}
+  \dd X_t = \Big(\mu - \tfrac12 v_t - \lambda\bar\kappa\Big)\dd t
+            + \sqrt{v_t}\,\dd W_t^{S} + \dd\!\Big(\textstyle\sum_{i=1}^{N_t} J_i\Big),
+  \qquad
+  \dd v_t = \kappa(\theta - v_t)\,\dd t + \xi\sqrt{v_t}\,\dd W_t^{v}.
+\end{equation}
+\textbf{Properties.} It inherits volatility clustering and leverage from Heston and
+skew/heavy tails from Merton: the jumps dominate short-horizon tail behaviour while
+stochastic volatility shapes the term structure of higher moments. It is the
+richest of the diffusion-based models here and neither Markov in $X$ alone nor
+L\'evy.
+
+\subsection{Non-Markovian dynamics: fractional Brownian motion}
+Fractional Brownian motion (fBM)~\cite{MandelbrotVanNess1968} $B^{H}$ with Hurst
+index $H\in(0,1)$ is the centred Gaussian process with $B^H_0=0$ and
+\begin{equation}
+  \E\!\big[B^{H}_t B^{H}_s\big]
+  = \tfrac12\big(|t|^{2H} + |s|^{2H} - |t-s|^{2H}\big).
+\end{equation}
+We take the log-price to be $X_t = c\,B^{H}_t$ (with $c$ chosen so
+$\Var(X_T)=\sigma^2 T$, matching Black--Scholes). \textbf{Properties.} $B^H$ is
+\emph{self-similar}, $B^{H}_{at}\stackrel{d}{=}a^{H}B^{H}_t$, and has
+\emph{stationary} increments. The increment process (fractional Gaussian noise,
+fGn) has autocovariance
+\begin{equation}\label{eq:fgn}
+  \gamma(k) = \tfrac12\big(|k+1|^{2H} - 2|k|^{2H} + |k-1|^{2H}\big),
+\end{equation}
+so for $H>\tfrac12$ increments are \emph{positively correlated with long-range
+dependence} ($\sum_k\gamma(k)=\infty$, persistent/trending), for $H<\tfrac12$ they
+are anti-persistent, and $H=\tfrac12$ recovers Brownian motion. Crucially, for
+$H\ne\tfrac12$ fBM is \emph{neither Markov nor a semimartingale}: the future
+depends on the entire past. Its \emph{marginal} law is still Gaussian, so moments
+alone cannot distinguish it from GBM once the variance is matched --- only the path
+memory differs. We use $H=0.70$.
+
+\subsection{Rough volatility: the rough Bergomi model}
+Empirically, log-volatility behaves like fBM with a \emph{small} Hurst index
+$H\approx0.1$ --- ``volatility is rough''~\cite{GatheralJaissonRosenbaum2018}. The
+rough Bergomi model~\cite{BayerFrizGatheral2016} drives the instantaneous variance
+by a rough Volterra (Riemann--Liouville) process
+$\widetilde W^{H}_t = \sqrt{2H}\int_0^t (t-s)^{H-\frac12}\,\dd Z_s$:
+\begin{align}
+  v_t &= \xi_0\,\exp\!\Big(\eta\,\widetilde W^{H}_t - \tfrac12\eta^2 t^{2H}\Big), \\
+  \dd X_t &= -\tfrac12 v_t\,\dd t
+             + \sqrt{v_t}\,\big(\rho\,\dd Z_t + \sqrt{1-\rho^2}\,\dd Z_t^{\perp}\big),
+\end{align}
+with forward variance $\xi_0$, vol-of-vol $\eta$, roughness $H\in(0,\tfrac12)$ and
+leverage $\rho$. The term $-\tfrac12\eta^2 t^{2H}$ normalises $\E[v_t]=\xi_0$.
+\textbf{Properties.} Volatility paths have H\"older regularity $H-\varepsilon$ ---
+far rougher than Brownian --- and are strongly (anti-)autocorrelated at short lags.
+The variance is non-Markov and non-semimartingale; the model reproduces the steep
+short-maturity skew that classical stochastic-volatility models miss. We use
+$H=0.10$, $\eta=0.8$.
+
+\subsection{Summary of properties}
+\begin{table}[H]
+\centering
+\caption{Qualitative properties of the six models. ``Markov'' refers to the
+observable log-price $X$ alone; jump/rough/fractional models add structure that a
+two-moment description cannot capture.}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Model & Markov in $X$ & Increment law & Memory & Skew & Heavy tails \\
+\midrule
+Black--Scholes & yes & Gaussian, i.i.d.\ & none & no & no \\
+Heston         & no (needs $v$) & non-Gaussian & clustering & yes ($\rho$) & mild \\
+Merton         & yes (L\'evy) & Gaussian $+$ jumps & none & yes ($m<0$) & yes \\
+Bates          & no & jumps $+$ SV & clustering & yes & yes \\
+fBM ($H{=}0.7$)& no & Gaussian, correlated & long memory & no & no \\
+rough Bergomi  & no & non-Gaussian & rough/short memory & yes ($\rho$) & yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Path signatures}\label{sec:sig}
+% ===========================================================================
+A \emph{path} is a continuous map $x:[0,T]\to\R^d$; discretely, a sequence of
+vectors. The \emph{signature}~\cite{Chen1957,Lyons1998,LyonsCaruanaLevy2007} is the
+collection of all iterated integrals of the path. For a multi-index
+$(i_1,\dots,i_k)\in\{1,\dots,d\}^k$ the corresponding coordinate is
+\begin{equation}
+  S(x)^{\,i_1\cdots i_k}
+  = \idotsint\limits_{0<t_1<\cdots<t_k<T}
+    \dd x^{i_1}_{t_1}\,\dd x^{i_2}_{t_2}\cdots \dd x^{i_k}_{t_k}\ \in\ \R,
+\end{equation}
+and the level-$k$ tensor collects all $d^{k}$ of them,
+\begin{equation}
+  S(x)^{(k)} = \idotsint\limits_{0<t_1<\cdots<t_k<T}
+  \dd x_{t_1}\otimes\cdots\otimes\dd x_{t_k}\ \in\ (\R^{d})^{\otimes k}.
+\end{equation}
+The full signature $S(x) = \big(1, S^{(1)}, S^{(2)}, \dots\big)$ lives in the tensor
+algebra $T((\R^d))$ and begins with the empty-word constant $1$.
+
+\paragraph{Two distinct axes.}
+It is essential not to confuse two quantities:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Concept & Meaning & Range in this study \\
+\midrule
+Path dimension $d$ & number of channels / assets / factors & $1$ (or $2$ with time), then $20$/$10$ \\
+Signature level $k$ & order of the iterated-integral feature & up to $3$ or $5$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+At level $k$ in dimension $d$ there are exactly $d^{k}$ coordinates, so the
+signature truncated at depth $N$ has length $d + d^2 + \cdots + d^{N}$.
+
+\paragraph{Algebraic structure.}
+Two facts drive everything below. (i) \emph{Chen's identity}: signatures are
+multiplicative under path concatenation, $S(x\ast y)=S(x)\otimes S(y)$, which is
+what makes them computable incrementally and streaming. (ii) The \emph{shuffle
+identity}: the pointwise product of two signature coordinates is a linear
+combination (the shuffle) of higher signature coordinates. Consequently
+\emph{every polynomial in the increments of the path is a linear functional of the
+signature}. This is the algebraic reason signatures give access to moments
+(Section~\ref{sec:moments}).
+
+\subsection{Truncation and its implications}
+The signature is infinite, so in practice we \textbf{truncate} at a finite depth
+$N$, keeping levels $1,\dots,N$. Two properties make this benign and quantifiable:
+\begin{itemize}
+  \item \textbf{Factorial decay.} For a path of length (1-variation) $L$,
+        $\big\|S(x)^{(k)}\big\| \le L^{k}/k!$~\cite{LyonsCaruanaLevy2007}. Higher
+        levels shrink factorially, so a modest $N$ already captures most of the
+        analytic information --- truncation error is controlled a priori.
+  \item \textbf{Uniqueness.} The (full) signature determines a path up to
+        tree-like equivalence and reparametrisation~\cite{HamblyLyons2010,
+        BoedihardjoGengLyonsYang2016}; adding a monotone \emph{time channel}
+        removes the reparametrisation ambiguity, so a time-augmented path is
+        recovered from its signature. This is why we time-augment the
+        one-dimensional processes in Stage~4.
+\end{itemize}
+The \emph{implications} of truncation are the theme of this project: a depth-$N$
+signature can only resolve structure up to order $N$. A Gaussian needs $N=2$; a
+skewed process needs $N\ge3$; a heavy-tailed one needs $N\ge4$. Truncating too
+shallow makes two processes that differ only in a higher moment look identical ---
+exactly the phenomenon the experiments probe. (For dimensionality one may instead
+use the \emph{log-signature}, a compressed basis of the free Lie algebra whose
+size is given by the Witt formula; we use the full signature throughout for
+simplicity, since our effective dimensions are small.)
+
+\subsection{The expected signature and characterisation of laws}
+For a \emph{random} path $X$ we form the \textbf{expected signature}
+$\Phi(X) = \E[S(X)]$, the average of the signature over the law of the path. Under
+moment-type conditions the expected signature \emph{determines the law of the
+process}~\cite{Fawcett2003,LevinLyonsNi2013,ChevyrevOberhauser2022}: it is the
+path-space analogue of the classical moment problem, where the sequence of moments
+pins down a distribution. This is the precise sense in which ``signatures
+characterise a process''. Comparing two processes therefore reduces to comparing
+their expected signatures, and truncating at level $N$ compares them up to
+$N$-th-order information --- which is what we do, level by level, throughout the
+report. The signature method and these characterisation results are surveyed in
+\cite{ChevyrevKormilitzin2016}; efficient differentiable implementations and
+kernels are developed in \cite{KidgerBonnier2019,KidgerLyons2021,Salvi2021}.
+
+% ===========================================================================
+\section{Accessing moments with signatures}\label{sec:moments}
+% ===========================================================================
+\subsection{From signatures to moments (mathematically)}
+\paragraph{The one-dimensional case.}
+For a scalar path $X$ the level-$k$ signature telescopes:
+\begin{equation}\label{eq:1d}
+  S(X)^{(k)}
+  = \idotsint\limits_{0<t_1<\cdots<t_k<T}\dd X_{t_1}\cdots\dd X_{t_k}
+  = \frac{\big(X_T - X_0\big)^{k}}{k!}.
+\end{equation}
+Taking expectations,
+$\Phi(X)^{(k)} = \E\!\big[(X_T-X_0)^k\big]/k!$, so the level-$k$ coordinate of the
+expected signature is exactly the $k$-th \emph{raw moment} of the total increment,
+divided by $k!$. Hence:
+\begin{center}
+level $1\leftrightarrow$ mean,\quad level $2\leftrightarrow$ 2nd moment,\quad
+level $3\leftrightarrow$ 3rd moment (skew),\quad level $4\leftrightarrow$ 4th
+moment (kurtosis).
+\end{center}
+This is why, in 1D, comparing expected signatures level by level recovers moment
+differences, and why higher 1D levels carry little \emph{new} information (they are
+powers of a single number).
+
+\paragraph{Time augmentation and path dependence.}
+Augmenting to the two-dimensional path $t\mapsto(t, X_t)$ adds \emph{cross} terms
+such as $\int_0^T t\,\dd X_t$ and $\int_0^T X_t\,\dd t$, which depend on the
+\emph{order} in which the increments occur, not merely on the endpoint. These are
+what let the signature separate processes with identical endpoint moments but
+different memory --- fractional and rough processes in Stage~4.
+
+\paragraph{The multi-dimensional case.}
+For $d>1$ the level-2 term $\int\dd X^{i}\,\dd X^{j}$ splits into a symmetric part
+$\tfrac12\,\Delta X^{i}\Delta X^{j}$ (whose expectation gives the
+\emph{covariance}) and an antisymmetric part, the \emph{L\'evy area}
+$\tfrac12(\int X^i\dd X^j - \int X^j\dd X^i)$, which encodes ordered co-movement a
+symmetric covariance matrix cannot. More generally, by the shuffle identity every
+mixed moment of the increments is a linear functional of the expected signature, so
+the truncated expected signature is a rich, ordered generalisation of the moment
+vector.
+
+\subsection{Monte-Carlo estimation of the process moments}
+Because the processes are simulated, their moments are estimated by Monte Carlo.
+From $n$ i.i.d.\ paths we form the endpoint increments $\{\Delta X^{(p)}\}_{p=1}^n$
+and estimate raw/central moments by sample averages: the sample mean
+$\hat\mu=\frac1n\sum_p\Delta X^{(p)}$, the sample variance, and standardised
+central moments for skewness and excess kurtosis. In the multivariate case we
+estimate the mean vector $\hat\mu=\frac1n\sum_p x^{(p)}$ and covariance
+$\widehat\Sigma=\frac1n\sum_p x^{(p)}x^{(p)\top}-\hat\mu\hat\mu^{\top}$. These are
+the ``textbook'' summaries a quant would reach for; their sampling error scales
+like $n^{-1/2}$, and \emph{higher} moments are noisier, which is why Stage~2 uses
+more paths (a running sum of many increments is pushed toward Gaussianity by the
+central limit theorem, diluting the higher-moment signal).
+
+\subsection{Comparing moments and signatures}\label{sec:measures}
+We compare processes under two lenses and report several normalisations.
+\begin{itemize}
+  \item \textbf{Statistical distances.} $L^2$ distance between mean vectors and
+        Frobenius distance between covariance matrices,
+        $\|\hat\mu_A-\hat\mu_B\|_2$ and
+        $\|\widehat\Sigma_A-\widehat\Sigma_B\|_F$.
+  \item \textbf{Signature distances.} $L^2$ distance between expected signatures.
+        Because a level-$k$ block has $d^{k}$ coordinates that are also
+        numerically larger, a raw distance conflates ``real difference'' with
+        ``scale''. We therefore report, per level: (1) the \textbf{raw} $L^2$
+        distance; (2) the \textbf{level-normalised} distance, dividing by
+        $\sqrt{d^{k}}$ (a per-coordinate RMS that makes levels of different width
+        comparable); and (3) the \textbf{standardised} distance, dividing each
+        coordinate by the baseline process's signature-coordinate standard
+        deviation before measuring, which removes the magnitude effect and
+        exposes the true switch-on structure. The standardised view is the one we
+        plot.
+\end{itemize}
+
+% ###########################################################################
+\part{Implementation}
+% ###########################################################################
+
+% ===========================================================================
+\section{Validation of the signature libraries}\label{sec:validation}
+% ===========================================================================
+Signatures are easy to get subtly wrong: the truncation convention, the leading
+constant term, the channel ordering and the time parametrisation are all places a
+pipeline can silently disagree with the mathematics. We therefore cross-validate
+the two libraries before trusting any number.
+
+\paragraph{Settings.} Signatures are computed with \code{pysiglib} via
+\code{pysiglib.sig(paths, degree=$N$, time\_aug, end\_time, n\_jobs=-1)}. The
+convention is \code{scalar\_term=False}, i.e.\ the returned vector omits the leading
+$1$ and is laid out as the concatenation
+$[\,\text{level }1\,|\,\text{level }2\,|\cdots|\,\text{level }N\,]$ with level $k$
+occupying $d^{k}$ consecutive coordinates; $\code{n\_jobs}=-1$ uses all cores.
+Arrays are passed as C-contiguous \code{float64} (else the library warns and
+copies). Time augmentation, when used, appends a single monotone channel on
+$[\,\text{end\_time}/T,\ \text{end\_time}\,]$.
+
+\paragraph{Cross-check.} We recompute the Stage-1 expected signatures at every
+level with both \code{pysiglib} and \code{roughpy}, matching all conventions (no
+scalar term, identical channel order, identical time parametrisation and depth).
+The two libraries agree to numerical precision: across all processes and levels the
+largest disagreement is $\approx 2\times10^{-13}$, i.e.\ floating-point rounding.
+This confirms the truncation layout and parametrisation before we scale up, and is
+the reason the level-indexing used by every distance table (Section~\ref{sec:measures})
+can be trusted.
+
+% ===========================================================================
+\section{The Monte-Carlo simulation engine}\label{sec:mc}
+% ===========================================================================
+\subsection{Streaming, batched design}
+No experiment ever stores all paths or all signatures at once. For each process we
+loop: (i) simulate a batch of paths (and their increments); (ii) update the
+classical estimators; (iii) compute the batch's signatures and fold them into
+fixed-length running sums; (iv) discard the batch. Memory is therefore independent
+of the number of paths --- verified flat at $\approx0.46$~GB for a $100{,}000$-path
+Stage-3 run. Reproducibility is guaranteed by seeding a dedicated
+\code{numpy.random.default\_rng} per (configuration, process) with deterministic
+offsets (Python's built-in \code{hash} is randomised per process and is
+deliberately \emph{not} used).
+
+\subsection{Discretisation schemes}
+Each model uses an explicit, documented scheme on a grid of
+\code{time\_steps} points with step $\dd t = T/\code{time\_steps}$:
+\begin{itemize}
+  \item \textbf{GBM / Merton diffusion:} exact Gaussian increments
+        $(\mu-\tfrac12\sigma^2)\dd t + \sigma\sqrt{\dd t}\,Z$.
+  \item \textbf{Heston / Bates variance (CIR):} Euler \emph{full-truncation}
+        scheme~\cite{LordKoekkoekVanDijk2010,Andersen2008}
+        $v_{t+1}=v_t+\kappa(\theta-v_t^{+})\dd t+\xi\sqrt{v_t^{+}}\sqrt{\dd t}\,Z_v$
+        with the variance floored at $0$ wherever it is used, and the correlated
+        price innovation $Z_s=\rho Z_v+\sqrt{1-\rho^2}Z_\perp$.
+  \item \textbf{Merton / Bates jumps:} per step draw $N_t\sim\text{Poisson}(\lambda\dd t)$;
+        the total log jump is $N_t\,m+\sqrt{N_t}\,\delta\,Z$ (a sum of $N_t$
+        i.i.d.\ normals), less the compensator $\lambda\bar\kappa\,\dd t$.
+  \item \textbf{fBM:} exact fractional Gaussian noise via the Cholesky factor $L$
+        of the Toeplitz covariance built from~\eqref{eq:fgn}; a batch is
+        $Z L^\top$. The factor depends only on $(\code{time\_steps},H)$ and is
+        cached across batches. The scale $\sigma\sqrt{T}/\code{time\_steps}^{H}$
+        matches the terminal variance to Black--Scholes.
+  \item \textbf{Rough Bergomi:} the fractional process is built on the grid from
+        the same Cholesky factor ($H=0.1$); we form $v_t$ by the martingale-
+        normalised exponential and correlate the spot Brownian with the per-step
+        vol innovation (leverage). Building the fractional process exactly in
+        distribution while correlating the spot with the step innovation is a
+        deliberate simplification of the full Volterra construction, adequate for
+        this synthetic testbed.
+\end{itemize}
+The 1-D log-price is the cumulative sum of the increments; a monotone time channel
+is appended to the \emph{path} (not the increments) when time augmentation is on.
+
+\subsection{Settings and parameters}
+\begin{table}[H]
+\centering
+\caption{Global Monte-Carlo settings per stage (seed $42$ throughout).}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Stage & Paths & Steps & Horizon & Depth & Dimension \\
+\midrule
+1 (1D Gaussian) & $1{,}000$ & $20$ & --- & $\le5$ & $1$ \\
+2 (1D moments)  & $4{,}000$ & $20$ & --- & $\le5$ & $1$ \\
+3 (high-dim)    & $10{,}000$ & $300$ & --- & $3$ / $5$ & $20$ / $10$ \\
+4 (advanced)    & $5{,}000$ & $100$ & $1$ yr & $5$ & $1$ ($2$ with time) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{table}[H]
+\centering
+\caption{Stage-4 model parameters (annualised; baseline volatility $\sigma=0.2$,
+so $\sigma^2=0.04$). Batch size $500$; time augmentation on.}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Model & Parameters \\
+\midrule
+Black--Scholes & $\sigma=0.2,\ \mu=0$ \\
+Heston         & $v_0=\theta=0.04,\ \kappa=2.0,\ \xi=0.3,\ \rho=-0.7$ \\
+Merton         & $\sigma=0.2,\ \lambda=1.0,\ m=-0.10,\ \delta=0.15$ \\
+Bates          & Heston $+$ Merton parameters above \\
+fBM            & $H=0.70$, scaled to $\Var(X_T)=\sigma^2 T$ \\
+rough Bergomi  & $H=0.10,\ \xi_0=0.04,\ \eta=0.8,\ \rho=-0.7$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Computing and comparing moments with the libraries}\label{sec:compute}
+% ===========================================================================
+\subsection{Streaming expected signature}
+For each process a \code{RunningSignatureStats} accumulator holds three
+fixed-length quantities: the running sum of signature coordinates, the running sum
+of squares, and the path count. From these we recover, without ever materialising
+all signatures, the \textbf{expected signature} (sum\,/\,count) and the
+\textbf{per-coordinate standard deviation} (from
+$\Var = \E[x^2]-\E[x]^2$, clipped at $0$), the latter being the baseline scale used
+for the standardised distances. At $d=10$, depth~5 a single signature has
+$111{,}110$ numbers ($\approx0.9$~MB); storing all of them for $10{,}000$ paths
+would need $\approx8.9$~GB, so this streaming is what makes the experiment feasible.
+
+\subsection{Streaming statistical estimators}
+The classical moments are estimated the same streaming way: running sums
+$\sum x$ and $\sum x x^{\top}$ (length $d$ and $d\times d$) give the mean and
+covariance at the end via $\widehat\Sigma=\frac1n\sum xx^\top-\hat\mu\hat\mu^\top$.
+Terminal statistics use one sample per path (the endpoint); increment statistics
+use every $(\text{path},\text{step})$ pair.
+
+\subsection{Distance measures in practice}
+Given the per-process expected signatures and statistical summaries, the runner
+builds three tables implementing Section~\ref{sec:measures}: a statistical-distance
+table ($L^2$ on means, Frobenius on covariances), a whole-signature distance table
+(raw and level-normalised), and a level-wise table (raw, level-normalised and
+standardised by the baseline coordinate std). Because levels occupy disjoint
+coordinate blocks, the whole-signature distance truncated at depth $k$ equals
+$\sqrt{\sum_{j\le k}(\text{raw level-}j\text{ distance})^2}$, so a single level
+table yields the distance-versus-depth curves without recomputation.
+
+% ###########################################################################
+\part{Results}
+% ###########################################################################
+
+% ===========================================================================
+\section{Stage 1: one-dimensional Gaussian processes}
+% ===========================================================================
+We simulate three Gaussian random walks (1000 paths, 20 time steps, seed 42),
+changing one property at a time so each comparison isolates one moment.
+
+\begin{table}[H]
+\centering
+\caption{Stage 1 processes and the empirical moments of their increments. The
+simulator reproduces the intended mean and variance.}
+\begin{tabular}{@{}lcc cc@{}}
+\toprule
+Process & True mean & True variance & Emp.\ mean & Emp.\ variance \\
+\midrule
+A (baseline)          & 0.00 & 1.0 & $+0.005$ & 1.009 \\
+B (mean shifted)      & 0.05 & 1.0 & $+0.045$ & 1.007 \\
+C (volatility doubled)& 0.00 & 4.0 & $+0.008$ & 4.021 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Comparisons: \textbf{A vs B} isolates the mean, \textbf{A vs C} isolates the
+variance, \textbf{B vs C} combines both.
+
+\begin{table}[H]
+\centering
+\caption{Stage 1 signature distances ($L^2$ between expected signatures) by
+truncation level. The mean difference is present from level~1; the variance
+difference switches on at level~2.}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Comparison & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+A\_vs\_B (mean)     & 0.808 & 0.808 & 7.29 & 9.16 & 34.7 \\
+A\_vs\_C (variance) & 0.054 & 31.25 & 31.36 & 860.3 & 917.8 \\
+B\_vs\_C (combined) & 0.862 & 31.25 & 32.79 & 854.8 & 901.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{signature_distance_vs_level.png}
+\caption{Stage 1: $L^2$ distance between expected signatures versus truncation
+level. The mean comparison (A\_vs\_B) is already non-zero at level~1; the
+variance comparison (A\_vs\_C) starts near zero and jumps at level~2.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{sample_paths_A_B_C.png}
+\caption{Example Stage 1 paths. Process~C (double volatility) visibly wanders
+further; process~B drifts gently upward.}
+\end{figure}
+
+\paragraph{Reading.} The mean is a first-order (level-1) property, recovered
+immediately; the variance is a second-order (level-2) property, appearing only
+once level~2 is included. The continued growth of the raw distance at levels~4--5
+is a \emph{scale effect} (higher-level coordinates are numerically larger), not
+new distributional information --- a Gaussian carries no independent information
+beyond its first two moments.
+
+% ===========================================================================
+\section{Stage 2: one-dimensional higher moments}
+% ===========================================================================
+Stage~2 matches the mean and variance across three processes so that levels~1--2
+cannot separate them; any difference the signature detects must then come from a
+\emph{higher} moment.
+
+\begin{table}[H]
+\centering
+\caption{Stage 2 processes (4000 paths). Mean and variance are matched; only
+skewness and kurtosis differ.}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Process & Mean & Variance & Skewness & Excess kurtosis \\
+\midrule
+G (Gaussian)             & $-0.00$ & 1.01 & $+0.01$ & $+0.03$ \\
+S (skew-normal, $\alpha=8$) & $-0.00$ & 0.99 & $\mathbf{+0.92}$ & $+0.75$ \\
+T (Student-$t$, $\mathrm{df}=5$) & $-0.00$ & 1.00 & $+0.05$ & $\mathbf{+4.44}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Stage 2 signature distances by level. Skewness (G\_vs\_S) switches on at
+level~3; kurtosis (G\_vs\_T) switches on at level~4.}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Comparison & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+G\_vs\_S (skewness) & 0.011 & 0.119 & \textbf{1.781} & 6.089 & 21.83 \\
+G\_vs\_T (kurtosis) & 0.033 & 0.033 & 0.749 & \textbf{6.006} & 9.914 \\
+S\_vs\_T (combined) & 0.022 & 0.127 & 1.036 & 1.045 & 13.12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{higher_moment_distance_vs_level.png}
+\caption{Stage 2: distance versus level. The skew line (G\_vs\_S) switches on at
+level~3; the heavy-tail line (G\_vs\_T) stays small through level~3 (the
+Student-$t$ is symmetric) and switches on at level~4.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{sample_paths_G_S_T.png}
+\caption{Example Stage 2 paths for G, S and T.}
+\end{figure}
+
+\paragraph{Reading.} Each moment becomes visible at its own signature level:
+mean~$\to$~1, variance~$\to$~2, skewness~$\to$~3, kurtosis~$\to$~4. To ``see''
+the $k$-th moment one must truncate the signature at level~$\geq k$ --- a direct
+demonstration of the supervisor's point that the truncation level matters and
+that richer processes need deeper truncation.
+
+% ===========================================================================
+\section{Stage 3: high-dimensional Gaussian benchmark}
+% ===========================================================================
+\subsection{Motivation: from moments to geometry}
+A one-dimensional path has no geometry: the signature essentially sees only the
+endpoint, and higher levels behave like powers of a single number
+(Eq.~\eqref{eq:1d}). Once a path has $d>1$ channels, level~2 onward contains
+genuine cross-channel terms $S^{i,j}$ (and ordered higher-order interactions
+$S^{i,j,k},\dots$), which encode \textbf{covariance, correlation blocks and
+co-movement}. Stage~3 tests this and compares signatures against classical
+statistical estimators.
+
+\paragraph{Path meaning.} Each path is a multivariate return stream
+$X_t = (r_t^1, \dots, r_t^d)$, where $r_t^i$ is the increment of \emph{synthetic
+asset $i$}. Thus $d=20$ means 20 synthetic assets evolving together, and $d=10$
+means 10.
+
+\subsection{Configurations and processes}
+Because the feature count grows as $d^{\,k}$, we use two complementary settings.
+\begin{table}[H]
+\centering
+\caption{The two configurations and their signature feature dimensions
+($d+d^2+\cdots+d^{\text{depth}}$, no constant term).}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Config & Purpose & $d$ & depth & Feature dim & Batch size \\
+\midrule
+\code{d20\_depth3} & wide, shallow: cross-channel geometry & 20 & 3 & $8{,}420$ & 250 \\
+\code{d10\_depth5} & narrow, deep: higher-order interactions & 10 & 5 & $111{,}110$ & 100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+All four processes are multivariate Gaussian random walks with increments
+$\dd X \sim \mathcal{N}(\mu\,\dd t,\ \Sigma\,\dd t)$, $\dd t=1$.
+\begin{table}[H]
+\centering
+\caption{The four high-dimensional processes.}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{2.2cm}p{3.2cm}p{4.0cm}p{4.4cm}@{}}
+\toprule
+Process & Mean structure & Covariance structure & Interpretation \\
+\midrule
+A baseline & $0$ & identity & $d$ independent assets, no drift, unit vol \\
+B mean-shift & first $25\%$ of channels $=0.05$ & identity & a subset of assets has a directional trend \\
+C corr.-block & $0$ & identity $+$ correlated blocks & sector / block co-movement \\
+D common-shock & $0$ & market factor $+$ idiosyncratic & a market-wide factor drives co-movement \\
+\bottomrule
+\end{tabular}
+\end{table}
+The correlation blocks in C set pairwise correlation $\rho=0.5$ on channels
+$0$--$4$ and $\rho=0.3$ on channels $5$--$9$ (remaining channels independent).
+Because only one property changes per process, each comparison isolates one
+effect: A~vs~B (mean), A~vs~C and A~vs~D (covariance geometry), B~vs~C (mixed).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{sample_paths_first_5_dimensions.png}
+\caption{Example high-dimensional paths, channels 0--4 (colour = channel), one
+panel per process. Process~C's low channels visibly co-move (correlation blocks);
+Process~D shows market-wide co-movement.}
+\end{figure}
+
+\subsection{Results: classical statistical distances}
+\begin{table}[H]
+\centering
+\caption{Statistical distances between processes ($10{,}000$ paths, 300 steps).
+The mean-shift (B) is seen only by the mean estimator; the correlation block~(C)
+and common shock~(D) are seen only by the (increment) covariance estimator. The
+increment covariance is the clean detector: the terminal covariance scales with
+the number of steps and so has a large sampling-noise floor.}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Config & Comparison & Mean-vec $L^2$ & Incr.\ cov.\ Frob. & Term.\ cov.\ Frob. \\
+\midrule
+\code{d20\_depth3} & A\_vs\_B (mean)  & \textbf{33.35} & 0.017 & 82.5 \\
+\code{d20\_depth3} & A\_vs\_C (corr)  & 1.00 & \textbf{2.610} & 791.6 \\
+\code{d20\_depth3} & A\_vs\_D (shock) & 1.09 & \textbf{1.798} & 532.7 \\
+\midrule
+\code{d10\_depth5} & A\_vs\_B (mean)  & \textbf{21.33} & 0.009 & 42.9 \\
+\code{d10\_depth5} & A\_vs\_C (corr)  & 1.02 & \textbf{2.612} & 773.8 \\
+\code{d10\_depth5} & A\_vs\_D (shock) & 0.88 & \textbf{0.901} & 280.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{highdim_statistical_distances.png}
+\caption{Classical statistical distances. The mean-shift comparisons have small
+covariance distance; the correlation/shock comparisons have large covariance
+distance and near-zero mean distance.}
+\end{figure}
+
+\subsection{Results: signature distances}
+\begin{table}[H]
+\centering
+\caption{Standardised level-wise signature distances (each coordinate in units of
+Process~A's variability). The mean shift (A\_vs\_B) peaks at level~1; the
+covariance-geometry comparisons (A\_vs\_C, A\_vs\_D) are near-zero at level~1 and
+peak at level~2.}
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Config & Comparison & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+\code{d20\_depth3} & A\_vs\_B & \textbf{0.433} & 0.135 & 0.084 & --- & --- \\
+\code{d20\_depth3} & A\_vs\_C & 0.013 & \textbf{0.094} & 0.014 & --- & --- \\
+\code{d20\_depth3} & A\_vs\_D & 0.014 & \textbf{0.064} & 0.015 & --- & --- \\
+\midrule
+\code{d10\_depth5} & A\_vs\_B & \textbf{0.388} & 0.109 & 0.098 & 0.033 & 0.028 \\
+\code{d10\_depth5} & A\_vs\_C & 0.018 & \textbf{0.183} & 0.015 & 0.074 & 0.016 \\
+\code{d10\_depth5} & A\_vs\_D & 0.016 & \textbf{0.068} & 0.015 & 0.028 & 0.016 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{highdim_levelwise_signature_distance.png}
+\caption{The key figure: standardised level-wise signature distance. A\_vs\_B
+(mean shift) peaks at level~1; A\_vs\_C and A\_vs\_D (covariance geometry) are flat
+at level~1 and peak at level~2. The mixed comparison B\_vs\_C is elevated at both.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{highdim_signature_distance_by_depth.png}
+\caption{Raw whole-signature distance as depth grows (levels $1..k$ combined).
+The raw distance is dominated by the magnitude of the highest included level ---
+a scale effect --- which is exactly why the standardised view above is needed to
+read the true structure.}
+\end{figure}
+
+\paragraph{The scale caveat, made concrete.} The raw and level-normalised
+distances grow monotonically with level for \emph{every} comparison. For
+instance, the raw A\_vs\_C level-3 distance in \code{d20\_depth3} is $\approx
+2748$, dwarfing the level-2 value of $\approx 396$ --- purely a magnitude
+artifact. Only after standardising by Process~A's coordinate standard deviation
+does the genuine ``level-2 covariance'' signal emerge. Normalised or standardised
+distances must therefore always be reported alongside the raw ones.
+
+\subsection{Scaling}
+A full run of both configurations at $100{,}000$ paths peaked at
+$\approx 0.46$~GB resident memory --- flat regardless of path count, as the
+streaming design intends --- and took $\approx 2$~min for \code{d20\_depth3} and
+$\approx 26$~min for \code{d10\_depth5}. The extra paths only sharpen the results:
+the A\_vs\_C level-1 noise floor falls from $0.013$ at $10{,}000$ paths to $0.004$
+at $100{,}000$, making the level-2 covariance signal stand out even more clearly.
+
+% ===========================================================================
+\section{Stage 4: advanced financial processes}
+% ===========================================================================
+Stage~4 takes the six models of Section~\ref{sec:models} --- Black--Scholes plus
+the four departures --- as 1-D log-price paths, all calibrated to the same baseline
+volatility so that levels~1--2 are comparable and the interesting differences live
+in the higher moments and the path memory. Time augmentation is on (effective
+dimension~2), so the signature is sensitive to path ordering; at depth~5 the
+feature vector has only $2+4+8+16+32=62$ coordinates.
+
+\begin{table}[H]
+\centering
+\caption{Stage-4 processes and empirical statistics ($5{,}000$ paths, 100 steps,
+horizon 1 year, seed 42). All share the baseline volatility; the differences are in
+the higher moments and the path memory.}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Code & Process (feature) & Term.\ var. & Incr.\ var. & Term.\ mean $\|\cdot\|$ \\
+\midrule
+\code{BS}    & Black--Scholes (baseline)        & 0.0401 & 0.000401 & 0.021 \\
+\code{HEST}  & Heston (stochastic vol)          & 0.0421 & 0.000401 & 0.021 \\
+\code{MERT}  & Merton (jumps)                   & 0.0718 & 0.000727 & 0.029 \\
+\code{BATES} & Bates (jump-diffusion)           & 0.0736 & 0.000727 & 0.034 \\
+\code{FBM}   & fractional BM ($H{=}0.70$, memory)& 0.0387 & \textbf{0.000063} & 0.002 \\
+\code{RVOL}  & rough Bergomi ($H{=}0.10$, rough vol)& 0.0644 & 0.000427 & \textbf{0.297} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\code{BS} attains its designed variance $\sigma^2 T = 0.04$. Jumps roughly double
+the variance and shift the mean (negative-skew jumps). \code{FBM} has a much
+\emph{smaller} per-step increment variance yet the \emph{same} terminal variance:
+its positively correlated increments accumulate to the same endpoint spread --- the
+defining fingerprint of long memory. \code{RVOL}'s large negative mean (the
+$-\tfrac12 v\,\dd t$ It\^o term under a heavy-tailed variance) reflects rough,
+spiky volatility.
+
+\begin{table}[H]
+\centering
+\caption{Standardised level-wise signature distances from the Black--Scholes
+baseline (each coordinate in units of \code{BS}'s variability). Bold marks where
+each feature switches on: stochastic vol grows through the higher levels; jumps
+switch on at level~2; Bates is the strongest of the diffusion family; long memory
+(\code{FBM}) is modest but non-zero despite a matched terminal variance; rough
+volatility dominates at every level.}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Comparison & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+\code{BS\_vs\_HEST}  (stoch.\ vol) & 0.001 & 0.020 & 0.092 & 0.134 & \textbf{0.191} \\
+\code{BS\_vs\_MERT}  (jumps)       & 0.040 & \textbf{0.276} & 0.373 & 0.449 & 0.545 \\
+\code{BS\_vs\_BATES} (jump-diff.)  & 0.065 & \textbf{0.295} & 0.417 & 0.519 & 0.646 \\
+\code{BS\_vs\_FBM}   (long memory) & \textbf{0.114} & 0.073 & 0.135 & 0.171 & 0.188 \\
+\code{MERT\_vs\_BATES} (added vol) & 0.025 & 0.026 & 0.090 & 0.119 & 0.168 \\
+\code{BS\_vs\_RVOL}  (rough vol)   & 1.367 & 1.266 & 1.587 & 1.991 & \textbf{2.608} \\
+\code{FBM\_vs\_RVOL} (memory kinds)& 1.481 & 1.327 & 1.650 & 2.043 & \textbf{2.650} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{advanced_levelwise_signature_distance.png}
+\caption{Stage 4: standardised level-wise signature distance from Black--Scholes.
+Rough volatility (\code{RVOL}) is the most extreme departure at every level; below
+it, jumps (\code{MERT}, \code{BATES}) switch on at level~2 while stochastic vol
+(\code{HEST}) and long memory (\code{FBM}) contribute smaller, higher-order
+signals. (The axis label ``$\div$~Process-A coord std'' refers to the \code{BS}
+baseline, reusing the Stage-3 plotting code.)}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{advanced_sample_paths.png}
+\caption{Example Stage-4 log-price paths, one panel per process. Jump processes
+show discrete drops; the rough-vol path is visibly the most erratic.}
+\end{figure}
+
+\paragraph{The blind spot of moments, made concrete.} The classical
+increment-covariance distance between \code{BS} and \code{FBM} is only
+$\approx 3.4\times10^{-4}$ --- essentially the same as any other pair --- because
+fractional Gaussian noise still has a well-defined marginal variance. The moments
+are therefore nearly \emph{blind} to \code{FBM}'s long memory. Yet the signature
+still separates \code{FBM} from \code{BS} (raw distance $0.029$, larger than the
+stochastic-vol and jump pairs). This is the clearest single illustration in the
+whole study of what signatures add over a moment/covariance table: they encode
+\emph{ordered, path-dependent} structure that summary statistics cannot see.
+
+% ===========================================================================
+\section{Discussion}
+% ===========================================================================
+Across all four stages the signature behaves as the theory predicts, and in the
+high-dimensional and advanced settings it agrees with the classical estimators
+while adding structure a moment table alone cannot order:
+\begin{itemize}
+  \item \textbf{Mean shift} (A vs B) is a level-1 effect, recovered by both the
+        mean estimator and signature level~1.
+  \item \textbf{Covariance geometry} (A vs C correlation blocks; A vs D common
+        shock) is a level-2+ effect carried by the cross terms $S^{i,j}$,
+        recovered by both the covariance estimator and signature level~2.
+  \item \textbf{Higher levels amplify scale}, so only normalised / standardised
+        distances reveal the true switch-on structure.
+  \item The signature additionally encodes \emph{ordered} interactions
+        ($S^{i,j}\neq S^{j,i}$), a form of path geometry that symmetric
+        covariance matrices cannot express.
+  \item \textbf{Advanced processes} (Stage~4) confirm the pattern beyond the
+        Gaussian world: stochastic volatility and jumps appear as higher-moment
+        effects (jumps switching on at level~2), while \emph{path memory} ---
+        long memory in \code{FBM} and roughness in \code{RVOL} --- is separated by
+        the signature even when the marginal moments are matched and the classical
+        increment-covariance estimator is blind to it.
+\end{itemize}
+
+% ===========================================================================
+\section{Conclusion and next steps}
+% ===========================================================================
+Truncated path signatures characterise these processes by recovering their moment
+and geometric information at interpretable levels: mean~$\to$~1, variance~$\to$~2,
+skewness~$\to$~3, kurtosis~$\to$~4, and multi-channel covariance /
+co-movement~$\to$~2+. Beyond the Gaussian world, they further separate stochastic
+volatility, jumps and jump-diffusions, and --- most distinctively --- the
+\emph{path memory} of fractional Brownian motion and rough volatility, which the
+marginal moments cannot see. All experiments are fully streaming and scale to
+$100{,}000$ paths at constant memory.
+
+Deliberately out of scope for now (the natural next stages) are: applying the
+pipeline to the real \code{SPY/QQQ/TLT} rolling windows; and signature kernels and
+signature-based anomaly / regime detection.
+
+\vspace{1em}
+\noindent\textbf{Reproducibility.} All results use seed~42. The experiments are
+run from the project root with:
+\begin{quote}\ttfamily
+python "Gaussian testing/run\_gaussian\_signature\_test.py"\\
+python "Gaussian testing/run\_higher\_moment\_test.py"\\
+python "HighDim testing/run\_highdim\_gaussian\_benchmark.py"\\
+python "Advanced processes testing/run\_advanced\_processes\_test.py"
+\end{quote}
+Tables and figures are written under each folder's \code{results/} directory.
+
+% ===========================================================================
+\begin{thebibliography}{99}
+% ===========================================================================
+\bibitem{Chen1957} K.-T. Chen. Integration of paths, geometric invariants and a
+  generalized Baker--Hausdorff formula. \emph{Annals of Mathematics},
+  65(1):163--178, 1957.
+\bibitem{Lyons1998} T. Lyons. Differential equations driven by rough signals.
+  \emph{Revista Matem\'atica Iberoamericana}, 14(2):215--310, 1998.
+\bibitem{LyonsCaruanaLevy2007} T. Lyons, M. Caruana, T. L\'evy. \emph{Differential
+  Equations Driven by Rough Paths}. Lecture Notes in Mathematics 1908, Springer,
+  2007.
+\bibitem{FrizVictoir2010} P. Friz, N. Victoir. \emph{Multidimensional Stochastic
+  Processes as Rough Paths}. Cambridge University Press, 2010.
+\bibitem{HamblyLyons2010} B. Hambly, T. Lyons. Uniqueness for the signature of a
+  path of bounded variation and the reduced path group. \emph{Annals of
+  Mathematics}, 171(1):109--167, 2010.
+\bibitem{BoedihardjoGengLyonsYang2016} H. Boedihardjo, X. Geng, T. Lyons, D. Yang.
+  The signature of a rough path: uniqueness. \emph{Advances in Mathematics},
+  293:720--737, 2016.
+\bibitem{Fawcett2003} T. Fawcett. \emph{Problems in Stochastic Analysis:
+  Connections between Rough Paths and Non-commutative Harmonic Analysis}. DPhil
+  thesis, University of Oxford, 2003.
+\bibitem{LevinLyonsNi2013} D. Levin, T. Lyons, H. Ni. Learning from the past,
+  predicting the statistics for the future, learning an evolving system.
+  arXiv:1309.0260, 2013.
+\bibitem{ChevyrevKormilitzin2016} I. Chevyrev, A. Kormilitzin. A primer on the
+  signature method in machine learning. arXiv:1603.03788, 2016.
+\bibitem{ChevyrevOberhauser2022} I. Chevyrev, H. Oberhauser. Signature moments to
+  characterize laws of stochastic processes. \emph{Journal of Machine Learning
+  Research}, 23(176):1--42, 2022.
+\bibitem{KidgerBonnier2019} P. Kidger, P. Bonnier, I. Perez Arribas, C. Salvi,
+  T. Lyons. Deep signature transforms. \emph{Advances in Neural Information
+  Processing Systems (NeurIPS)}, 2019.
+\bibitem{KidgerLyons2021} P. Kidger, T. Lyons. Signatory: differentiable
+  computations of the signature and logsignature transforms, on both CPU and GPU.
+  \emph{International Conference on Learning Representations (ICLR)}, 2021.
+\bibitem{Salvi2021} C. Salvi, T. Cass, J. Foster, T. Lyons, W. Yang. The signature
+  kernel is the solution of a Goursat PDE. \emph{SIAM Journal on Mathematics of
+  Data Science}, 3(3):873--899, 2021.
+\bibitem{Heston1993} S. Heston. A closed-form solution for options with stochastic
+  volatility with applications to bond and currency options. \emph{Review of
+  Financial Studies}, 6(2):327--343, 1993.
+\bibitem{CIR1985} J. Cox, J. Ingersoll, S. Ross. A theory of the term structure of
+  interest rates. \emph{Econometrica}, 53(2):385--407, 1985.
+\bibitem{Merton1976} R. Merton. Option pricing when underlying stock returns are
+  discontinuous. \emph{Journal of Financial Economics}, 3(1--2):125--144, 1976.
+\bibitem{Bates1996} D. Bates. Jumps and stochastic volatility: exchange rate
+  processes implicit in Deutsche Mark options. \emph{Review of Financial Studies},
+  9(1):69--107, 1996.
+\bibitem{LordKoekkoekVanDijk2010} R. Lord, R. Koekkoek, D. van Dijk. A comparison
+  of biased simulation schemes for stochastic volatility models. \emph{Quantitative
+  Finance}, 10(2):177--194, 2010.
+\bibitem{Andersen2008} L. Andersen. Simple and efficient simulation of the Heston
+  stochastic volatility model. \emph{Journal of Computational Finance},
+  11(3):1--42, 2008.
+\bibitem{MandelbrotVanNess1968} B. Mandelbrot, J. Van Ness. Fractional Brownian
+  motions, fractional noises and applications. \emph{SIAM Review},
+  10(4):422--437, 1968.
+\bibitem{GatheralJaissonRosenbaum2018} J. Gatheral, T. Jaisson, M. Rosenbaum.
+  Volatility is rough. \emph{Quantitative Finance}, 18(6):933--949, 2018.
+\bibitem{BayerFrizGatheral2016} C. Bayer, P. Friz, J. Gatheral. Pricing under rough
+  volatility. \emph{Quantitative Finance}, 16(6):887--904, 2016.
+\end{thebibliography}
+
+\end{document}

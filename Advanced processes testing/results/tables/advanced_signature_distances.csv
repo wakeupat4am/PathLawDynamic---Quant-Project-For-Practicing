@@ -1,0 +1,8 @@
+config_name,comparison,depth,raw_signature_l2_distance,level_normalized_signature_distance,interpretation
+advanced_1d_depth5,BS_vs_HEST,5,0.0036830680508190762,0.00046775011020436675,L2 distance between the two expected signatures.
+advanced_1d_depth5,BS_vs_MERT,5,0.02252176827671678,0.0028602674314118924,L2 distance between the two expected signatures.
+advanced_1d_depth5,BS_vs_BATES,5,0.026926926668572472,0.0034197231066335205,L2 distance between the two expected signatures.
+advanced_1d_depth5,BS_vs_FBM,5,0.0289816738730529,0.003680676262555821,L2 distance between the two expected signatures.
+advanced_1d_depth5,MERT_vs_BATES,5,0.007410598558103477,0.0009411469580265701,L2 distance between the two expected signatures.
+advanced_1d_depth5,BS_vs_RVOL,5,0.3487557976575424,0.044292030594560626,L2 distance between the two expected signatures.
+advanced_1d_depth5,FBM_vs_RVOL,5,0.37713563404462785,0.04789627341996511,L2 distance between the two expected signatures.

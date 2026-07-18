@@ -1,6 +1,33 @@
 # PathLaw
 
-This project currently contains a clean Yahoo Finance data-preparation pipeline for a beginner quant-finance workflow using `SPY`, `QQQ`, and `TLT`.
+This project investigates how **path signatures characterise stochastic
+processes** by recovering their moments and geometry, working toward applying
+signatures to real financial paths. It has two parts:
+
+1. A **Yahoo Finance data-preparation pipeline** (`SPY`, `QQQ`, `TLT`) — the real
+   data the signature methods will eventually be applied to.
+2. A staged set of **synthetic signature experiments** that validate the
+   signature machinery on data whose true moments/geometry are known:
+   - **`Gaussian testing/`** — 1D experiments: signatures recover the **mean**
+     (level 1), **variance** (level 2), **skewness** (level 3) and **kurtosis**
+     (level 4). Validated against `roughpy`.
+   - **`HighDim testing/`** — high-dimensional experiments (`d=20`/depth 3 and
+     `d=10`/depth 5): signatures recover **multi-channel geometry** — cross-asset
+     **covariance and co-movement** (level 2+) — and are compared head-to-head
+     with classical statistical moment estimators. See that folder's README for
+     the full write-up and results.
+   - **`Advanced processes testing/`** — advanced financial processes that break
+     the Gaussian/Markov assumptions: **stochastic volatility (Heston)**, **jumps
+     (Merton)**, **jump-diffusion (Bates)**, **non-Markov fractional Brownian
+     motion**, and **rough (autocorrelated) volatility (rough Bergomi)**.
+     Signatures tell them apart and localise *where* each feature — vol
+     clustering, jumps, long memory, roughness — shows up by level. See that
+     folder's README for the full write-up and results.
+
+## Data pipeline
+
+This part is a clean Yahoo Finance data-preparation pipeline for a beginner
+quant-finance workflow using `SPY`, `QQQ`, and `TLT`.
 
 The pipeline does the following:
 
@@ -17,7 +44,7 @@ The pipeline does the following:
 
 ```text
 project/
-├── data/
+├── data/                               # real SPY/QQQ/TLT data (pipeline output)
 │   ├── raw_prices_spy_qqq_tlt.csv
 │   ├── log_returns_spy_qqq_tlt.csv
 │   └── rolling_windows_20d_spy_qqq_tlt.npy
@@ -25,7 +52,13 @@ project/
 │   ├── adjusted_close_prices.png
 │   ├── log_returns.png
 │   └── rolling_volatility_20d.png
-├── prepare_yahoo_data.py
+├── prepare_yahoo_data.py               # the data pipeline
+├── Gaussian testing/                   # STAGE 1: 1D signature experiments
+│   └── README.md                       #   mean/variance/skew/kurtosis by level
+├── HighDim testing/                    # STAGE 2: high-dim signature experiments
+│   └── README.md                       #   multi-channel geometry vs stats estimators
+├── Advanced processes testing/         # STAGE 3: advanced (non-Gaussian) processes
+│   └── README.md                       #   Heston, Merton, Bates, fBM, rough vol
 └── README.md
 ```
 
@@ -138,18 +171,49 @@ Required Python packages:
 pip install yfinance pandas numpy matplotlib
 ```
 
+## Signature experiments
+
+The synthetic signature work lives in its own folders, each with a detailed
+README. Run them from the project root (mind the spaces in the folder names):
+
+```bash
+# Stage 1 — 1D: mean / variance / skewness / kurtosis by signature level
+python "Gaussian testing/run_gaussian_signature_test.py"
+python "Gaussian testing/run_higher_moment_test.py"
+
+# Stage 2 — high-dimensional geometry vs classical statistical estimators
+python "HighDim testing/run_highdim_gaussian_benchmark.py"
+
+# Stage 3 — advanced processes: stochastic vol, jumps, fBM, rough volatility
+python "Advanced processes testing/run_advanced_processes_test.py"
+```
+
+**Stage 2 headline results** (`d=20`/depth 3 and `d=10`/depth 5, 10,000 paths):
+
+- **Mean shift (A vs B)** → detected by the mean estimator and by signature
+  **level 1**.
+- **Correlation blocks / common shock (A vs C, A vs D)** → detected by the
+  covariance estimator and by signature **level 2+** cross-terms `Sⁱʲ` — the
+  multi-channel *geometry* that 1D paths cannot express.
+- Raw high-level signature distances are dominated by scale, so **normalised /
+  standardised** distances are reported to reveal the true structure.
+- Fully **streaming/batched**: verified flat at **≈0.46 GB** peak for a 100,000-
+  path run. See `HighDim testing/README.md` for tables, figures and full detail.
+
 ## Current Status
 
 Implemented:
-- Yahoo Finance data download
-- cleaning and date alignment
-- adjusted close handling
-- log return computation
-- rolling-window export
-- exploratory plots
+- Yahoo Finance data download, cleaning, date alignment, log returns, rolling
+  windows, exploratory plots
+- **Path signatures** on synthetic data (`pysiglib`, cross-checked with `roughpy`)
+- **1D moment recovery** — mean, variance, skewness, kurtosis by signature level
+- **High-dimensional geometry recovery** — cross-channel covariance/co-movement
+  vs classical statistical estimators, at scale
+- **Advanced non-Gaussian processes** — stochastic volatility (Heston), jumps
+  (Merton), jump-diffusion (Bates), non-Markov fractional Brownian motion, and
+  rough (autocorrelated) volatility (rough Bergomi); signatures separate them and
+  localise each feature by level
 
 Not implemented yet:
-- path signatures
-- signature kernels
-- signature-based anomaly detection
-- signature-based regime detection
+- signatures applied to the real SPY/QQQ/TLT rolling windows
+- signature kernels, signature-based anomaly / regime detection
